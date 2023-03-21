@@ -1,8 +1,15 @@
-import pandas as pd
-import numpy as np
-import nltk
-
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
 from flask import Flask, render_template, request
+import pickle
+import nltk
+import numpy as np
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from nltk.corpus import stopwords
+nltk.download('stopwords')
+
 
 app = Flask(__name__)
 
@@ -14,27 +21,19 @@ def index():
 
 @app.route("/forward/", methods=['POST'])
 def move_forward():
-    input_string = request.form['first_name']
+    input_string = request.form['txt']
 
+    fin_feat = np.array(input_string)
     dataset = pd.read_csv('./spam.csv', encoding="ISO-8859-1")
 
     x = dataset['v1']
-    # print(x)
     y = dataset['v2']
-    # print(y)
-
     x = np.array(x)
     y = np.array(y)
 
     text_lowercase = []
     for i in range(len(y)):
         text_lowercase.append(str(y[i]).lower())
-
-    print(y[0])
-    print(text_lowercase[0])
-
-    nltk.download('stopwords')
-    from nltk.corpus import stopwords
 
     stop_words = set(stopwords.words('english'))
 
@@ -45,48 +44,37 @@ def move_forward():
             [word for word in text.split() if word.lower() not in stop_words])
         filtered_data.append(filtered_text)
 
-    # print(text_lowercase[0])
-    print(filtered_data[0])
+    y_new = filtered_data
 
-    from sklearn import preprocessing
+    tfvect = TfidfVectorizer()
+    tfvect.fit(y_new)
+    x_tfvect = tfvect.transform(y_new)
+    tf_vector = x_tfvect.toarray()
+    tf_df = pd.DataFrame(tf_vector)
 
-    y = filtered_data
-    y_ = pd.DataFrame(y)
-    encoder = preprocessing.LabelEncoder()
-    y_onehotencoding = y_.apply(encoder.fit_transform)
-    # print(y_onehotencoding.head())
+    pickle.dump(tfvect, open("file2.pkl", "wb"))
 
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.model_selection import train_test_split
-    from sklearn.metrics import accuracy_score
+    x_train_tf, x_test_tf, y_train_tf, y_test_tf = train_test_split(
+        tf_vector, x, test_size=0.15)
+    Log = LogisticRegression()
+    Log.fit(x_train_tf, y_train_tf)
+    y_pred_tf = Log.predict(x_test_tf)
+    score = accuracy_score(y_pred_tf, y_test_tf)*100
 
-    vectorizer_onehot = preprocessing.OneHotEncoder()
-    vectorizer_onehot.fit(y_onehotencoding)
-    y_vector_onehot = vectorizer_onehot.transform(y_onehotencoding).toarray()
-    print(y_vector_onehot)
-    print("\n")
+    pickle.dump(Log, open("file1.pkl", "wb"))
 
-    x_train, x_test, y_train, y_test = train_test_split(
-        y_vector_onehot, x, random_state=1, test_size=0.4)
-    log_reg = LogisticRegression()
-    log_reg.fit(x_train, y_train)
+    pickle.dump(score, open("file3.pkl", "wb"))
 
-    # y_pred = log_reg.predict(x_test)
-    # acc = accuracy_score(y_test, y_pred)
-    # return render_template('index.html', value=acc)
-    # input_string.reshape(1, -1)
-    arr = [input_string, input_string]
-    y_pred = log_reg.predict(x_test)
-    acc = accuracy_score(y_test, y_pred)
-    print(y_pred)
-
-
-    return render_template('index.html', value=acc)
-
-    # input_string.reshape(-1, 1)
-    # acc = y_pred
-    # print(acc)
+    tfvect = pickle.load(open('file2.pkl', 'rb'))
+    model = pickle.load(open('file1.pkl', 'rb'))
+    text = [input_string]
+    text = tfvect.transform(text)
+    preds = model.predict(text)
+    if preds != 'ham':
+        return render_template('index.html', value="spam")
+    else:
+        return render_template('index.html', value="not spam")
 
 
 if __name__ == '__main__':
-    app.run()
+    app.run(debug=True)
